@@ -7,21 +7,24 @@ one of the configured models, grounded in the current project and the recent con
 
 - A sparkle button at the **left end of the composer tool row**, immediately left of the model
   selector, in every session where the composer renders.
-- A review dialog (frame-wide overlay) with a model picker, the original draft, and an editable
-  result. Nothing is written back until the person chooses **Replace draft** or **Insert at
-  cursor**; Escape, the backdrop, or Cancel discards the result.
+- **One click starts the rewrite.** Opening the dialog immediately streams the optimized prompt
+  with the Session's currently selected model; there is no confirm-model step. The model row is a
+  collapsed, optional switch (click the model name to expand it) and only affects the next run.
+- A review dialog (frame-wide overlay) with the original draft and an editable result. Nothing is
+  written back until the person chooses **Replace draft** or **Insert at cursor**; Escape, the
+  backdrop, or Cancel discards the result.
 - **Streaming preview**: the dialog shows the rewritten text while the model generates it, and
   Cancel aborts the in-flight request.
 - **Original / rewrite / compare tabs**: inspect the draft, the rewrite, or both side by side
   before writing anything back.
-- **Session model by default**: the dialog starts on the model the composer's own model selector
-  has selected for this session (`ctx.modelDirectories`), falling back to the last choice on this
+- **Session model by default**: the run uses the model the composer's own model selector has
+  selected for this session (`ctx.modelDirectories`), falling back to the last choice on this
   device, then the deployment default.
-- **Keyboard chord**: `Ctrl+Shift+U` (`⌘⇧U` on macOS) opens the dialog for the current draft.
-  The command registers through `ctx.shortcuts`, so it also appears in Settings → Shortcuts and
-  honours user keybinding overrides; if the service or binding is unavailable the button still
-  works.
-- **In-dialog submit**: `Ctrl+Enter` (`⌘↵`) starts the rewrite, or applies **Replace draft** once
+- **Keyboard chord**: `Ctrl+Shift+U` (`⌘⇧U` on macOS) opens the dialog and starts the rewrite for
+  the current draft. The command registers through `ctx.shortcuts`, so it also appears in
+  Settings → Shortcuts and honours user keybinding overrides; if the service or binding is
+  unavailable the button still works.
+- **In-dialog submit**: `Ctrl+Enter` (`⌘↵`) retries the rewrite, or applies **Replace draft** once
   a result exists.
 
 ## How it stays grounded

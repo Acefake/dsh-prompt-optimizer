@@ -38,13 +38,16 @@ window.__ModuleLoader__.load({
         shortcutOpen: 'Open prompt optimizer',
         shortcutHint: 'Shortcut: {keys}',
         title: 'Optimize prompt',
-        subtitle: 'Rewrites the composer draft with the model you pick below, grounded in this project and the recent conversation. It only uses what is already here and does not invent requirements.',
+        subtitle: 'Rewrites the composer draft with this session’s model, grounded in this project and the recent conversation. It only uses what is already here and does not invent requirements.',
         model: 'Model',
+        modelHint: 'Change model',
         loadingModels: 'Reading configured models…',
         noModels: 'No model route is configured. Add a model provider in Settings first.',
         modelsFailed: 'Could not read models: {message}',
         refresh: 'Reload models',
         optimize: 'Optimize',
+        preparing: 'Preparing…',
+        retryAction: 'Try again',
         optimizing: 'Optimizing…',
         again: 'Optimize again',
         resultLabel: 'Optimized prompt (editable)',
@@ -80,13 +83,16 @@ window.__ModuleLoader__.load({
         shortcutOpen: '打开提示词优化',
         shortcutHint: '快捷键：{keys}',
         title: '优化提示词',
-        subtitle: '用下面选择的模型改写输入框里的草稿，并只依据当前项目和最近对话提供的信息；不会虚构需求。',
+        subtitle: '直接用当前会话的模型改写输入框里的草稿，只依据当前项目和最近对话提供的信息；不会虚构需求。',
         model: '模型',
+        modelHint: '更换模型',
         loadingModels: '正在读取已配置的模型…',
         noModels: '还没有配置模型。请先在设置里添加模型服务。',
         modelsFailed: '读取模型失败：{message}',
         refresh: '重新读取模型',
         optimize: '开始优化',
+        preparing: '准备中…',
+        retryAction: '重试',
         optimizing: '正在优化…',
         again: '重新优化',
         resultLabel: '优化结果（可编辑）',
@@ -135,6 +141,13 @@ window.__ModuleLoader__.load({
       '.dsh-po-hint{margin:0;font-size:12px;color:var(--dsw-alias-label-secondary,#aeb3bb)}',
       '.dsh-po-row{display:flex;align-items:center;gap:10px;min-width:0}',
       '.dsh-po-label{flex:none;min-width:34px;font-size:12px;color:var(--dsw-alias-label-secondary,#aeb3bb)}',
+      '.dsh-po-modelLine{display:flex;align-items:center;gap:8px;min-width:0}',
+      '.dsh-po-modelValue{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;height:24px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-primary,#f5f6f8);font:inherit;font-size:12px;cursor:pointer}',
+      '.dsh-po-modelValue:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}',
+      '.dsh-po-modelValue:disabled{opacity:.6;cursor:default}',
+      '.dsh-po-modelName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dsh-po-chevron{flex:none;font-size:10px;color:var(--dsw-alias-label-secondary,#aeb3bb);transition:transform .12s}',
+      '.dsh-po-chevron[data-open=true]{transform:rotate(180deg)}',
       '.dsh-po-select{flex:1;min-width:0;height:30px;padding:0 8px;border-radius:var(--dsw-radius-sm,8px);border:1px solid var(--dsw-alias-border-l2,rgba(255,255,255,.12));background:var(--dsw-alias-bg-module-platform,#353638);color:var(--dsw-alias-label-primary,#f5f6f8);font:inherit;font-size:12px}',
       '.dsh-po-select:disabled{opacity:.6}',
       '.dsh-po-note{margin:0;font-size:12px;color:var(--dsw-alias-label-secondary,#aeb3bb);overflow-wrap:anywhere}',
@@ -256,6 +269,7 @@ window.__ModuleLoader__.load({
       provider: '',
       model: '',
       sessionRoute: null,
+      showModel: false,
       view: 'result',
       status: 'idle',
       result: '',
@@ -582,6 +596,52 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Human-readable name for one route from the loaded catalog.
+     * @param {object | null} catalog model catalog
+     * @param {string} provider provider id
+     * @param {string} model model id
+     * @returns {string} display label
+     */
+    function routeLabel(catalog, provider, model) {
+      if (!catalog || !Array.isArray(catalog.groups)) return `${provider} / ${model}`
+      for (const group of catalog.groups) {
+        if (!group || group.id !== provider || !Array.isArray(group.models)) continue
+        const entry = group.models.find((candidate) => candidate && candidate.id === model)
+        if (entry) return `${group.name || group.id} / ${entry.name || entry.id}`
+      }
+      return `${provider} / ${model}`
+    }
+
+    /**
+     * One-click flow: resolve the Session's model, then stream the rewrite
+     * immediately. Used when the dialog opens and by "Try again".
+     * @param {object} target store
+     * @param {boolean} [adoptSession] adopt the Session selection over a manual choice
+     * @returns {Promise<void>} completion
+     */
+    async function startOptimize(target, adoptSession) {
+      const state = target.get()
+      if (!state.open) return
+      if (!state.draft.trim()) {
+        target.set({ status: 'idle', error: '' })
+        return
+      }
+      target.set({ status: 'preparing', error: '', result: '' })
+      await loadCatalog(target, target.get().sessionId, adoptSession === true)
+      const next = target.get()
+      if (!next.open) return
+      if (next.catalogStatus !== 'ready') {
+        target.set({ status: 'error', error: 'models-unavailable' })
+        return
+      }
+      if (!next.provider || !next.model) {
+        target.set({ status: 'error', error: 'no-selection' })
+        return
+      }
+      await optimize(target)
+    }
+
+    /**
      * Write the reviewed result back into the composer.
      * @param {object} target store
      * @param {'replace' | 'insert'} mode write-back mode
@@ -630,18 +690,20 @@ window.__ModuleLoader__.load({
      * @param {{draft: string, sessionId: string | undefined, chipCount: number}} captured composer facts
      */
     function openDialog(target, captured) {
+      const hasDraft = captured.draft.trim().length > 0
       target.set({
         open: true,
         draft: captured.draft,
         sessionId: captured.sessionId,
         chipCount: captured.chipCount,
         sessionRoute: null,
+        showModel: false,
         view: 'result',
-        status: 'idle',
+        status: hasDraft ? 'preparing' : 'idle',
         result: '',
         error: '',
       })
-      void loadCatalog(target, captured.sessionId, true)
+      if (hasDraft) void startOptimize(target, true)
     }
 
     /** Sparkle mark used by the composer control. */
@@ -757,14 +819,14 @@ window.__ModuleLoader__.load({
             return
           }
           if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-            const snapshot = store.get()
-            if (snapshot.status === 'running') return
             event.preventDefault()
             event.stopPropagation()
+            const snapshot = store.get()
+            if (snapshot.status === 'running' || snapshot.status === 'preparing') return
             if (snapshot.result) {
               applyResult(store, 'replace')
-            } else if (snapshot.catalogStatus === 'ready' && snapshot.provider && snapshot.model && snapshot.draft.trim()) {
-              void optimize(store)
+            } else if (snapshot.draft.trim()) {
+              void startOptimize(store)
             }
             return
           }
@@ -804,10 +866,15 @@ window.__ModuleLoader__.load({
       const groups = catalog && Array.isArray(catalog.groups) ? catalog.groups : []
       const failures = catalog && Array.isArray(catalog.failures) ? catalog.failures : []
       const loading = state.catalogStatus === 'loading' || state.catalogStatus === 'idle'
+      const preparing = state.status === 'preparing'
       const running = state.status === 'running'
+      const busy = preparing || running
       const hasDraft = state.draft.trim().length > 0
       const view = state.view === 'original' || state.view === 'compare' ? state.view : 'result'
       const value = state.provider && state.model ? JSON.stringify([state.provider, state.model]) : ''
+      const modelLabel = state.provider && state.model
+        ? routeLabel(catalog, state.provider, state.model)
+        : loading ? t('loadingModels') : t('noModels')
 
       const notes = []
       if (state.catalogStatus === 'error') {
@@ -822,44 +889,63 @@ window.__ModuleLoader__.load({
         notes.push(h('p', { className: 'dsh-po-note', key: 'provider-failures' },
           failures.map((entry) => t('providerFailure', { name: entry.name || entry.id, message: entry.message })).join(' · ')))
       }
-      if (state.error) {
+      if (state.error && state.error !== 'models-unavailable') {
         notes.push(h('p', { className: 'dsh-po-note', 'data-kind': 'error', key: 'failure' }, errorText(t, state.error)))
       }
 
-      const canOptimize = !running && state.catalogStatus === 'ready' && Boolean(state.provider && state.model) && hasDraft
       const rows = []
 
-      rows.push(h('div', { className: 'dsh-po-row', key: 'model' },
-        h('label', { className: 'dsh-po-label', htmlFor: 'dsh-po-model' }, t('model')),
-        h('select', {
-          id: 'dsh-po-model',
-          className: 'dsh-po-select',
-          value,
-          disabled: running || loading || groups.length === 0,
-          onChange: (event) => {
-            try {
-              const pair = JSON.parse(event.currentTarget.value)
-              store.set({ provider: String(pair[0]), model: String(pair[1]), error: '' })
-            } catch {
-              /* An unparsable option can only come from a corrupt catalog. */
-            }
-          },
-        },
-        groups.length === 0
-          ? h('option', { value: '' }, loading ? t('loadingModels') : t('noModels'))
-          : h(ModelOptions, { catalog }),
-        ),
+      rows.push(h('div', { className: 'dsh-po-modelLine', key: 'model-line' },
+        h('span', { className: 'dsh-po-label' }, t('model')),
         h('button', {
           type: 'button',
-          className: 'dsh-po-iconbtn',
-          title: t('refresh'),
-          'aria-label': t('refresh'),
-          disabled: running || loading,
-          onClick: () => {
-            void loadCatalog(store, store.get().sessionId)
-          },
-        }, '↻'),
+          className: 'dsh-po-modelValue',
+          title: t('modelHint'),
+          'aria-expanded': state.showModel === true,
+          disabled: loading || groups.length === 0,
+          onClick: () => store.set({ showModel: !store.get().showModel }),
+        },
+        h('span', { className: 'dsh-po-modelName' }, modelLabel),
+        h('span', {
+          className: 'dsh-po-chevron',
+          'data-open': state.showModel === true ? 'true' : 'false',
+          'aria-hidden': true,
+        }, '▾'),
+        ),
       ))
+
+      if (state.showModel) {
+        rows.push(h('div', { className: 'dsh-po-row', key: 'model-picker' },
+          h('select', {
+            id: 'dsh-po-model',
+            className: 'dsh-po-select',
+            value,
+            disabled: busy || loading || groups.length === 0,
+            onChange: (event) => {
+              try {
+                const pair = JSON.parse(event.currentTarget.value)
+                store.set({ provider: String(pair[0]), model: String(pair[1]), error: '' })
+              } catch {
+                /* An unparsable option can only come from a corrupt catalog. */
+              }
+            },
+          },
+          groups.length === 0
+            ? h('option', { value: '' }, loading ? t('loadingModels') : t('noModels'))
+            : h(ModelOptions, { catalog }),
+          ),
+          h('button', {
+            type: 'button',
+            className: 'dsh-po-iconbtn',
+            title: t('refresh'),
+            'aria-label': t('refresh'),
+            disabled: busy || loading,
+            onClick: () => {
+              void loadCatalog(store, store.get().sessionId)
+            },
+          }, '↻'),
+        ))
+      }
 
       if (state.sessionRoute && state.provider === state.sessionRoute.provider && state.model === state.sessionRoute.model) {
         rows.push(h('p', { className: 'dsh-po-hint', key: 'session-route' }, t('followSession')))
@@ -916,10 +1002,10 @@ window.__ModuleLoader__.load({
         rows.push(h('p', { className: 'dsh-po-note', 'data-kind': 'warn', key: 'empty-draft' }, t('emptyDraft')))
       }
 
-      if (running) {
+      if (busy) {
         rows.push(h('div', { className: 'dsh-po-status', key: 'running' },
           h('span', { className: 'dsh-po-spin', 'aria-hidden': true }),
-          state.result ? t('streamingHint') : t('optimizing')))
+          preparing ? t('preparing') : state.result ? t('streamingHint') : t('optimizing')))
       } else if (state.status === 'done') {
         rows.push(h('p', { className: 'dsh-po-hint', key: 'done' }, t('doneHint')))
       }
@@ -937,45 +1023,44 @@ window.__ModuleLoader__.load({
         onClick: () => closeDialog(store),
       }, t('cancel')))
 
-      if (state.result) {
-        footer.push(h('button', {
-          type: 'button',
-          className: 'dsh-po-btn',
-          key: 'again',
-          disabled: running,
-          onClick: () => {
-            void optimize(store)
-          },
-        }, t('again')))
-        footer.push(h('button', {
-          type: 'button',
-          className: 'dsh-po-btn',
-          key: 'insert',
-          disabled: running,
-          onClick: () => applyResult(store, 'insert'),
-        }, t('insert')))
-        footer.push(h('button', {
-          type: 'button',
-          className: 'dsh-po-btn',
-          'data-variant': 'primary',
-          key: 'replace',
-          title: `${t('replace')} (${SUBMIT_KEYS})`,
-          disabled: running,
-          onClick: () => applyResult(store, 'replace'),
-        }, t('replace')))
-      } else {
-        footer.push(h('button', {
-          type: 'button',
-          className: 'dsh-po-btn',
-          'data-variant': 'primary',
-          key: 'optimize',
-          autoFocus: true,
-          title: `${t('optimize')} (${SUBMIT_KEYS})`,
-          disabled: !canOptimize,
-          onClick: () => {
-            void optimize(store)
-          },
-        }, running ? t('optimizing') : t('optimize')))
+      if (!busy) {
+        if (state.result) {
+          footer.push(h('button', {
+            type: 'button',
+            className: 'dsh-po-btn',
+            key: 'again',
+            onClick: () => {
+              void startOptimize(store)
+            },
+          }, t('again')))
+          footer.push(h('button', {
+            type: 'button',
+            className: 'dsh-po-btn',
+            key: 'insert',
+            onClick: () => applyResult(store, 'insert'),
+          }, t('insert')))
+          footer.push(h('button', {
+            type: 'button',
+            className: 'dsh-po-btn',
+            'data-variant': 'primary',
+            key: 'replace',
+            title: `${t('replace')} (${SUBMIT_KEYS})`,
+            onClick: () => applyResult(store, 'replace'),
+          }, t('replace')))
+        } else if (state.status === 'error') {
+          footer.push(h('button', {
+            type: 'button',
+            className: 'dsh-po-btn',
+            'data-variant': 'primary',
+            key: 'retry',
+            autoFocus: true,
+            title: `${t('retryAction')} (${SUBMIT_KEYS})`,
+            disabled: !hasDraft,
+            onClick: () => {
+              void startOptimize(store)
+            },
+          }, t('retryAction')))
+        }
       }
 
       return h('div', {
