@@ -81,3 +81,8 @@ the deployment default from `sessionController.modelCatalog()`.
   colliding default is logged and skipped, so the button and dialog are unaffected. Pixel-level
   rendering and the chord itself were not exercised because the running page requires its
   authenticated URL; check Settings → Shortcuts for “Open prompt optimizer” to confirm the chord.
+
+## License
+
+MIT © 2026 Acefake. See [LICENSE](LICENSE).
+

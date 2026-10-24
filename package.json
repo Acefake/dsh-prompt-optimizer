@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "description": "Optimize the composer prompt with a configured model, grounded in the current project and conversation.",
+  "author": "Acefake",
+  "license": "MIT",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -15,7 +17,9 @@
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
