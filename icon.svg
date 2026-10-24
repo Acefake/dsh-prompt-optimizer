@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Prompt Optimizer">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b6cff"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#bg)"/>
+  <path d="M22 43.5 38.5 27l3.5 3.5L25.5 47 21 48z" fill="#ffffff" opacity="0.95"/>
+  <path d="M40.6 25.1a1.9 1.9 0 0 0 2.7 2.7l4.2-4.2a1.9 1.9 0 0 0-2.7-2.7z" fill="#ffe9a8"/>
+  <path d="M45 17.5l1.2 3.3 3.3 1.2-3.3 1.2L45 26.5l-1.2-3.3-3.3-1.2 3.3-1.2z" fill="#ffffff"/>
+  <path d="M48.5 9.5l.9 2.4 2.4.9-2.4.9-.9 2.4-.9-2.4-2.4-.9 2.4-.9z" fill="#ffe9a8"/>
+  <path d="M19.5 20l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z" fill="#ffffff" opacity="0.9"/>
+</svg>

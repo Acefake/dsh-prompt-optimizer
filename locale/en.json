@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Prompt Optimizer",
+    "description": "Rewrites the composer draft into a clearer prompt with a configured model, grounded in the current project and conversation. Preview first, then replace or insert; it does not invent requirements."
+  }
+}
